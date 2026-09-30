@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>Admin · Neon Beats</title>
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#cfe0ff;--dim:#7f95d6;--glow:#39b0ff;--panel:rgba(5,15,75,.72);--line:#3a4f95}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(#0e1650,#12278a 55%,#3558e0) fixed;color:var(--ink);font:22px 'VT323',ui-monospace,monospace;letter-spacing:1px;min-height:100vh}
+.w{max-width:900px;margin:0 auto;padding:16px}
+h1{font-size:44px;margin:6px 0;color:#fff;text-shadow:0 0 12px var(--glow);font-weight:400}
+button,.btn{font:inherit;color:var(--ink);background:var(--panel);border:2px solid var(--line);padding:3px 12px;cursor:pointer;display:inline-block}
+button:hover,.btn:hover{border-color:var(--glow);color:#fff;box-shadow:0 0 10px var(--glow)}
+input[type=text],input[type=email],input[type=password]{font:inherit;background:var(--panel);border:2px solid var(--line);color:#fff;padding:3px 8px;min-width:0;width:100%}
+input:focus{outline:none;border-color:var(--glow)}
+input[type=file]{display:none}
+.top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.top span{margin-left:auto;color:var(--dim)}
+.b{border:2px solid var(--line);background:var(--panel);padding:10px;margin-bottom:12px;display:grid;grid-template-columns:84px 1fr;gap:12px}
+.b.ar{opacity:.55}
+.c{width:84px;height:84px;background-size:cover;background-position:center;border:2px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:30px}
+.g{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:6px}
+.note{grid-column:1/-1;font-style:italic;color:var(--dim);background:rgba(0,0,0,.2)}
+.note:focus{color:#fff}
+.a{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+audio{height:30px;max-width:100%}
+#lg{max-width:380px;margin:12vh auto;display:grid;gap:10px}
+#msg{color:#82c8ff;min-height:1.2em}
+@media(max-width:640px){.g{grid-template-columns:1fr 1fr}.g input:first-child{grid-column:1/3}}
+</style></head><body>
+<div class="w">
+<div id="lg"><h1>ADMIN</h1>
+  <input type="email" id="em" placeholder="Correo"><input type="password" id="pw" placeholder="Contraseña">
+  <button id="in">ENTRAR</button></div>
+<div id="app" hidden>
+  <h1>PANEL ADMIN</h1>
+  <div class="top"><label class="btn">＋ SUBIR BEATS<input type="file" id="fs" accept="audio/*" multiple></label>
+  <a class="btn" href="index.html" target="_blank">VER PÚBLICA</a><button id="out">SALIR</button><span id="msg"></span></div>
+  <div id="list"></div>
+</div></div>
+<script>
+const CFG={url:'https://cagmwdzgctkipicscwfk.supabase.co',key:'sb_publishable_B6HvFJlm77RR9JIk7y48Gw_fs2XFKH-'};
+const $=id=>document.getElementById(id);
+let tok=sessionStorage.getItem('tk'),L=[];
+const H=x=>({apikey:CFG.key,Authorization:'Bearer '+tok,...x});
+const pub=p=>`${CFG.url}/storage/v1/object/public/beats/${encodeURI(p)}`;
+const say=t=>$('msg').textContent=t;
+const grad=n=>{let h=0;for(const c of n)h=(h*31+c.charCodeAt(0))%360;return `linear-gradient(135deg,hsl(${h},80%,45%),hsl(${(h+80)%360},85%,30%))`};
+function gate(){$('lg').hidden=!!tok;$('app').hidden=!tok;if(tok)load()}
+async function api(url,o){const r=await fetch(CFG.url+url,o);if(r.status==401){tok=null;sessionStorage.removeItem('tk');gate();throw new Error('Sesión vencida, entra de nuevo')}if(!r.ok)throw new Error(await r.text());return r}
+$('in').onclick=async()=>{
+  const r=await fetch(CFG.url+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:CFG.key,'Content-Type':'application/json'},body:JSON.stringify({email:$('em').value.trim(),password:$('pw').value})});
+  const j=await r.json();if(!r.ok)return alert('Correo o contraseña incorrectos');
+  tok=j.access_token;sessionStorage.setItem('tk',tok);gate()};
+$('out').onclick=()=>{tok=null;sessionStorage.removeItem('tk');gate()};
+async function load(){try{L=await(await api('/rest/v1/beats?order=created_at.desc',{headers:H()})).json();render()}catch(e){say(e.message)}}
+const safe=n=>n.replace(/[^\w.-]/g,'_');
+async function up(path,f){await api('/storage/v1/object/beats/'+path,{method:'POST',headers:H({'Content-Type':f.type||'application/octet-stream','x-upsert':'true'}),body:f})}
+$('fs').onchange=async e=>{
+  let bad='';
+  for(const f of e.target.files){try{say('Subiendo '+f.name+'…');const p='audio/'+Date.now()+'-'+safe(f.name);await up(p,f);
+    await api('/rest/v1/beats',{method:'POST',headers:H({'Content-Type':'application/json'}),body:JSON.stringify({title:f.name.replace(/\.[^.]+$/,''),audio_path:p})})}catch(er){bad=er.message}}
+  e.target.value='';await load();say(bad?'Error: '+bad:'Listo ✔')};
+const patch=(t,o)=>api('/rest/v1/beats?id=eq.'+t.id,{method:'PATCH',headers:H({'Content-Type':'application/json'}),body:JSON.stringify(o)}).then(()=>say('Guardado ✔')).catch(e=>say(e.message));
+function render(){
+  const box=$('list');box.innerHTML='';if(!L.length){box.textContent='Aún no hay beats. Sube el primero.';return}
+  L.forEach(t=>{
+    const d=document.createElement('div');d.className='b'+(t.arch?' ar':'');
+    const c=document.createElement('div');c.className='c';
+    if(t.cover_path)c.style.backgroundImage=`url("${pub(t.cover_path)}")`;else{c.style.background=grad(t.title);c.textContent='🎵'}
+    const r=document.createElement('div'),g=document.createElement('div');g.className='g';
+    [['title','Título'],['bpm','BPM'],['key','Tono'],['genre','Género']].forEach(([k,ph])=>{
+      const i=document.createElement('input');i.type='text';i.placeholder=ph;i.value=t[k]||'';
+      i.oninput=()=>{t[k]=i.value;clearTimeout(t._s);t._s=setTimeout(()=>patch(t,{[k]:i.value}),600)};g.append(i)});
+    const nt=document.createElement('input');nt.type='text';nt.className='note';
+    nt.placeholder='📝 Nota privada (solo vos la ves) — ej: wav original en /Beats/2024/...';
+    nt.value=t.note||'';
+    nt.oninput=()=>{t.note=nt.value;clearTimeout(t._n);t._n=setTimeout(()=>patch(t,{note:nt.value}),600)};
+    g.append(nt);
+    const a=document.createElement('div');a.className='a';
+    const au=document.createElement('audio');au.controls=true;au.preload='none';au.src=pub(t.audio_path);
+    const bf=document.createElement('button');bf.textContent=t.fav?'💔 QUITAR FAV':'❤ FAVORITO';
+    bf.onclick=async()=>{await patch(t,{fav:!t.fav});load()};
+    const ba=document.createElement('button');ba.textContent=t.arch?'📤 PUBLICAR':'📦 OCULTAR';
+    ba.onclick=async()=>{await patch(t,{arch:!t.arch});load()};
+    const lc=document.createElement('label');lc.className='btn';lc.textContent='🖼 PORTADA';
+    const fi=document.createElement('input');fi.type='file';fi.accept='image/*';
+    fi.onchange=async()=>{const f=fi.files[0];if(!f)return;try{const p='covers/'+Date.now()+'-'+safe(f.name);await up(p,f);await patch(t,{cover_path:p});load()}catch(e){say(e.message)}};
+    lc.append(fi);
+    const bd=document.createElement('button');bd.textContent='🗑 ELIMINAR';
+    bd.onclick=async()=>{if(!confirm('¿Eliminar "'+t.title+'"?'))return;try{
+      await api('/rest/v1/beats?id=eq.'+t.id,{method:'DELETE',headers:H()});
+      for(const p of [t.audio_path,t.cover_path])if(p)await fetch(CFG.url+'/storage/v1/object/beats/'+p,{method:'DELETE',headers:H()});
+      load()}catch(e){say(e.message)}};
+    a.append(bf,ba,lc,bd);r.append(g,a,au);d.append(c,r);box.append(d)});
+}
+gate();
+</script></body></html>
